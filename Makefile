@@ -19,6 +19,10 @@ demo: demo.c
 install: all
 	./fruitstrap -b demo.app
 
+install_os: fruitstrap
+	sudo mkdir -p /usr/local/bin
+	sudo cp fruitstrap /usr/local/bin/fruitstrap
+
 debug: all
 	./fruitstrap -d -b demo.app
 
