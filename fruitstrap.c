@@ -47,6 +47,7 @@ int AMDeviceLookupApplications(AMDeviceRef device, int zero, CFDictionaryRef* re
 bool found_device = false, debug = false, verbose = false;
 char *app_path = NULL;
 char *device_id = NULL;
+char *gdb_commands = NULL;
 char *args = NULL;
 int timeout = 0;
 CFStringRef last_path = NULL;
@@ -340,6 +341,34 @@ void write_gdb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
     CFDataRef cmds_data = CFStringCreateExternalRepresentation(NULL, cmds, kCFStringEncodingASCII, 0);
     FILE *out = fopen(PREP_CMDS_PATH, "w");
     fwrite(CFDataGetBytePtr(cmds_data), CFDataGetLength(cmds_data), 1, out);
+    if (gdb_commands) {
+        // Add user GDB commands to GDB_PREP_CMDS
+        FILE *hooks = fopen(gdb_commands, "r");
+        if (hooks == NULL) {
+            printf("[ !! ] Unable to open GDB command file. (%s)\n", gdb_commands);
+            exit(1);
+        }
+        // Read file's size
+        fseek(hooks, 0L, SEEK_END);
+        size_t size = ftell(hooks);
+        fseek(hooks, 0L, SEEK_SET);
+        // Allocate memory
+        void *buffer = malloc(size);
+        if (buffer == NULL) {
+            printf("[ !! ] Failed to allocate memory.\n");
+            exit(1);
+        }
+        // Read content of file
+        size_t nread = fread(buffer, size, 1, hooks);
+        fclose(hooks);
+        if (size != nread) {
+            printf("[ !! ] Failed to read %s.\n", gdb_commands);
+            exit(1);
+        }
+        fwrite(buffer, size, 1, out);
+        // Free memory
+        free(buffer);
+    }
     fclose(out);
 
     CFRelease(cmds);
@@ -496,7 +525,7 @@ void timeout_callback(CFRunLoopTimerRef timer, void *info) {
 }
 
 void usage(const char* app) {
-    printf("usage: %s [-d/--debug] [-i/--id device_id] -b/--bundle bundle.app [-a/--args arguments] [-t/--timeout timeout(seconds)]\n", app);
+    printf("usage: %s [-d/--debug] [-i/--id device_id] -b/--bundle bundle.app [-a/--args arguments] [-t/--timeout timeout(seconds)] [-x/--execute gdb-commands-file]\n", app);
 }
 
 int main(int argc, char *argv[]) {
@@ -507,11 +536,12 @@ int main(int argc, char *argv[]) {
         { "args", required_argument, NULL, 'a' },
         { "verbose", no_argument, NULL, 'v' },
         { "timeout", required_argument, NULL, 't' },
+        { "execute", no_argument, NULL, 'x' },
         { NULL, 0, NULL, 0 },
     };
     char ch;
 
-    while ((ch = getopt_long(argc, argv, "dvi:b:a:t:", longopts, NULL)) != -1)
+    while ((ch = getopt_long(argc, argv, "dvi:b:a:t:x:", longopts, NULL)) != -1)
     {
         switch (ch) {
         case 'd':
@@ -531,6 +561,9 @@ int main(int argc, char *argv[]) {
             break;
         case 't':
             timeout = atoi(optarg);
+            break;
+        case 'x':
+            gdb_commands = optarg;
             break;
         default:
             usage(argv[0]);
