@@ -361,10 +361,11 @@ void write_gdb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
         // Read content of file
         size_t nread = fread(buffer, size, 1, hooks);
         fclose(hooks);
-        if (size != nread) {
+        if (nread != 1) {
             printf("[ !! ] Failed to read %s.\n", gdb_commands);
             exit(1);
         }
+        fprintf(out, "\n");
         fwrite(buffer, size, 1, out);
         // Free memory
         free(buffer);
