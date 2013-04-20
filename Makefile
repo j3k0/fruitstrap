@@ -1,6 +1,7 @@
 IOS_CC = xcrun -sdk iphoneos clang
 IOS_MIN_OS = 5.1
 IOS_SDK = 6.1
+CERT="iPhone Developer"
 
 fruitstrap: fruitstrap.c
 	clang -o fruitstrap -framework CoreFoundation -framework MobileDevice -F/System/Library/PrivateFrameworks fruitstrap.c
@@ -11,8 +12,6 @@ install: fruitstrap
 
 uninstall: fruitstrap
 	sudo rm -f /usr/local/bin/fruitstrap
-
-CERT="iPhone Developer"
 
 all: demo.app fruitstrap
 

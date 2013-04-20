@@ -10,7 +10,7 @@ Install and debug iPhone apps without using Xcode. Designed to work on unjailbro
 
 ## Install
 
-* `make install_os` will compile and install fruitstrap to /usr/local/bin
+* `make install` will compile and install fruitstrap to /usr/local/bin
 
 ## Usage
 
@@ -38,8 +38,8 @@ Usage: ./fruitstrap [OPTION]...
 ## Demo
 
 * The included demo.app represents the minimum required to get code running on iOS.
-* `make install` will install demo.app to the device.
-* `make debug` will install demo.app and launch a GDB session.
+* `make install\_demo` will install demo.app to the device.
+* `make debug\_demo` will install demo.app and launch a GDB session.
 
 ## Notes
 
