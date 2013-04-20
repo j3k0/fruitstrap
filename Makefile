@@ -2,6 +2,9 @@ IOS_CC = xcrun -sdk iphoneos clang
 IOS_MIN_OS = 5.1
 IOS_SDK = 6.1
 
+fruitstrap: fruitstrap.c
+	clang -o fruitstrap -framework CoreFoundation -framework MobileDevice -F/System/Library/PrivateFrameworks fruitstrap.c
+
 all: demo.app fruitstrap
 
 demo.app: demo Info.plist
@@ -12,9 +15,6 @@ demo.app: demo Info.plist
 
 demo: demo.c
 	$(IOS_CC) -isysroot `xcode-select -print-path`/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS$(IOS_SDK).sdk -mios-version-min=$(IOS_MIN_OS) -arch armv7 -framework CoreFoundation -o demo demo.c
-
-fruitstrap: fruitstrap.c
-	clang -o fruitstrap -framework CoreFoundation -framework MobileDevice -F/System/Library/PrivateFrameworks fruitstrap.c
 
 install: all
 	./fruitstrap -b demo.app
