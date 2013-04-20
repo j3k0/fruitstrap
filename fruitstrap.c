@@ -45,7 +45,7 @@ int AMDeviceSecureInstallApplication(int zero, AMDeviceRef device, CFURLRef url,
 int AMDeviceMountImage(AMDeviceRef device, CFStringRef image, CFDictionaryRef options, void *callback, int cbarg);
 int AMDeviceLookupApplications(AMDeviceRef device, int zero, CFDictionaryRef* result);
 
-bool found_device = false, debug = false, verbose = false, unbuffered = false, nostart = false;
+bool found_device = false, debug = false, verbose = false, unbuffered = false, nostart = false, detect_only = false;
 char *app_path = NULL;
 char *device_id = NULL;
 char *gdb_commands = NULL;
@@ -571,6 +571,12 @@ void handle_device(AMDeviceRef device) {
         found_device = true;
     }
 
+    if (detect_only) {
+        printf("[....] Found device (%s).\n", CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding()));
+        exit(0);
+    }
+
+
     CFRetain(device); // don't know if this is necessary?
 
     printf("[  0%%] Found device (%s), beginning install\n", CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding()));
@@ -677,7 +683,7 @@ void device_callback(struct am_device_notification_callback_info *info, void *ar
 
 void timeout_callback(CFRunLoopTimerRef timer, void *info) {
     if (!found_device) {
-        printf("Timed out waiting for device.\n");
+        printf("[....] Timed out waiting for device.\n");
         exit(1);
     }
 }
@@ -687,6 +693,7 @@ void usage(const char* app) {
         "Usage: %s [OPTION]...\n"
         "  -d, --debug                  launch the app in GDB after installation\n"
         "  -i, --id <device_id>         the id of the device to connect to\n"
+        "  -c, --detect                 only detect if the device is connected\n"
         "  -b, --bundle <bundle.app>    the path to the app bundle to be installed\n"
         "  -a, --args <args>            command line arguments to pass to the app when launching it\n"
         "  -t, --timeout <timeout>      number of seconds to wait for a device to be connected\n"
@@ -710,11 +717,12 @@ int main(int argc, char *argv[]) {
         { "unbuffered", no_argument, NULL, 'u' },
         { "gdbargs", required_argument, NULL, 'g' },
         { "nostart", no_argument, NULL, 'n' },
+        { "detect", no_argument, NULL, 'c' },
         { NULL, 0, NULL, 0 },
     };
     char ch;
 
-    while ((ch = getopt_long(argc, argv, "dvuni:b:a:t:g:x:", longopts, NULL)) != -1)
+    while ((ch = getopt_long(argc, argv, "cdvuni:b:a:t:g:x:", longopts, NULL)) != -1)
     {
         switch (ch) {
         case 'd':
@@ -747,13 +755,16 @@ int main(int argc, char *argv[]) {
         case 'n':
             nostart = 1;
             break;
+        case 'c':
+            detect_only = true;
+            break;
         default:
             usage(argv[0]);
             return 1;
         }
     }
 
-    if (!app_path) {
+    if (!app_path && !detect_only) {
         usage(argv[0]);
         exit(0);
     }
@@ -763,9 +774,17 @@ int main(int argc, char *argv[]) {
         setbuf(stderr, NULL);
     }
 
-    printf("------ Install phase ------\n");
+    if (detect_only && timeout == 0) {
+        timeout = 5;
+    }
 
-    assert(access(app_path, F_OK) == 0);
+    if (!detect_only) {
+        printf("------ Install phase ------\n");
+    }
+
+    if (app_path) {
+        assert(access(app_path, F_OK) == 0);
+    }
 
     AMDSetLogLevel(5); // otherwise syslog gets flooded with crap
     if (timeout > 0)
