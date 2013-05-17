@@ -12,7 +12,7 @@
 #include "MobileDevice.h"
 
 #define FDVENDOR_PATH  "/tmp/fruitstrap-remote-debugserver"
-#define PREP_CMDS_PATH "/tmp/fruitstrap-gdb-prep-cmds"
+#define PREP_CMDS_PATH "/tmp/fruitstrap-gdb-prep-cmds-"
 #define GDB_SHELL      "--arch armv7f -x " PREP_CMDS_PATH
 
 // approximation of what Xcode does:
@@ -141,7 +141,7 @@ CFStringRef copy_xcode_path_for(CFStringRef subPath, CFStringRef search) {
     bool found = false;
     const char* home = get_home();
 
-    
+
     // Try using xcode-select --print-path
     if (!found) {
         path = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@/%@/%@"), xcodeDevPath, subPath, search);
@@ -162,7 +162,7 @@ CFStringRef copy_xcode_path_for(CFStringRef subPath, CFStringRef search) {
         path = CFStringCreateWithFormat(NULL, NULL, CFSTR("%s/Library/Developer/Xcode/%@/%@"), home, subPath, search);
         found = path_exists(path);
     }
-    
+
     CFRelease(xcodeDevPath);
 
     if (found) {
@@ -211,7 +211,7 @@ CFStringRef copy_device_support_path(AMDeviceRef device) {
         }
         CFArrayRemoveValueAtIndex(version_parts, CFArrayGetCount(version_parts) - 1);
     }
-    
+
     CFRelease(version_parts);
     CFRelease(build);
 
@@ -230,7 +230,7 @@ CFStringRef copy_developer_disk_image_path(CFStringRef deviceSupportPath) {
         CFRelease(path);
         path = NULL;
     }
-    
+
     if (path == NULL) {
         // Sometimes Latest seems to be missing in Xcode, in that case use find and hope for the best
         path = copy_long_shot_disk_image_path();
@@ -439,7 +439,11 @@ void write_gdb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
     CFStringFindAndReplace(cmds, CFSTR("{disk_container}"), disk_container_path, range, 0);
 
     CFDataRef cmds_data = CFStringCreateExternalRepresentation(NULL, cmds, kCFStringEncodingASCII, 0);
-    FILE *out = fopen(PREP_CMDS_PATH, "w");
+    char s[300] = PREP_CMDS_PATH;
+    if(device_id != NULL)
+        strcat(s, device_id);
+    FILE *out = fopen(s, "w");
+
     fwrite(CFDataGetBytePtr(cmds_data), CFDataGetLength(cmds_data), 1, out);
     if (gdb_commands) {
         // Add user GDB commands to GDB_PREP_CMDS
@@ -526,7 +530,7 @@ int kill_ptree(pid_t root, int signum) {
     mib[0] = CTL_KERN;
     mib[1] = KERN_PROC;
     mib[2] = KERN_PROC_ALL;
-    if (sysctl(mib, 3, NULL, &len, NULL, 0) == -1) {            
+    if (sysctl(mib, 3, NULL, &len, NULL, 0) == -1) {
         return -1;
     }
 
@@ -535,7 +539,7 @@ int kill_ptree(pid_t root, int signum) {
         return -1;
     }
 
-    if (sysctl(mib, 3, kp, &len, NULL, 0) == -1) {            
+    if (sysctl(mib, 3, kp, &len, NULL, 0) == -1) {
         free(kp);
         return -1;
     }
@@ -660,8 +664,11 @@ void handle_device(AMDeviceRef device) {
             kill(parent, SIGHUP);
             exit(1);
         } else {
-            CFStringRef gdb_cmd = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@ %@ %s"), path, CFSTR(GDB_SHELL), gdb_args);
- 
+            char s[300] = GDB_SHELL;
+            if(device_id != NULL)
+                strcat(s, device_id);
+            CFStringRef gdb_cmd = CFStringCreateWithFormat(NULL, NULL, CFSTR("%@ %s %s"), path, s, gdb_args);
+
             // Convert CFStringRef to char* for system call
             const char *char_gdb_cmd = CFStringGetCStringPtr(gdb_cmd, kCFStringEncodingMacRoman);
 
@@ -701,7 +708,7 @@ void usage(const char* app) {
         "  -g, --gdbargs <args>         extra arguments to pass to GDB when starting the debugger\n"
         "  -x, --gdbexec <file>         GDB commands script file\n"
         "  -n, --nostart                do not start the app when debugging\n"
-        "  -v, --verbose                enable verbose output\n", 
+        "  -v, --verbose                enable verbose output\n",
         app);
 }
 
