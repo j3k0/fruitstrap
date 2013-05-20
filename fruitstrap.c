@@ -11,7 +11,7 @@
 #include <pwd.h>
 #include "MobileDevice.h"
 
-#define FDVENDOR_PATH  "/tmp/fruitstrap-remote-debugserver"
+#define FDVENDOR_PATH  "/tmp/fruitstrap-remote-debugserver-"
 #define PREP_CMDS_PATH "/tmp/fruitstrap-gdb-prep-cmds-"
 #define GDB_SHELL      "--arch armv7f -x " PREP_CMDS_PATH
 
@@ -28,7 +28,7 @@
     set remote executable-directory {device_app}\n\
     set remote noack-mode 1\n\
     set trust-readonly-sections 1\n\
-    target remote-mobile " FDVENDOR_PATH "\n\
+    target remote-mobile {fpath}\n\
     mem 0x1000 0x3fffffff cache\n\
     mem 0x40000000 0xffffffff none\n\
     mem 0x00000000 0x0fff none\n\
@@ -425,6 +425,14 @@ void write_gdb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
     CFStringFindAndReplace(cmds, CFSTR("{disk_app}"), disk_app_path, range, 0);
     range.length = CFStringGetLength(cmds);
 
+    char m[300] = FDVENDOR_PATH;
+    if(device_id != NULL)
+        strcat(m, device_id);
+
+    CFStringRef vendor_path = CFStringCreateWithCString (NULL,&m[0],kCFStringEncodingASCII);
+    CFStringFindAndReplace(cmds, CFSTR("{fpath}"), vendor_path, range, 0);
+    range.length = CFStringGetLength(cmds);
+
     CFURLRef device_container_url = CFURLCreateCopyDeletingLastPathComponent(NULL, device_app_url);
     CFStringRef device_container_path = CFURLCopyFileSystemPath(device_container_url, kCFURLPOSIXPathStyle);
     CFMutableStringRef dcp_noprivate = CFStringCreateMutableCopy(NULL, 0, device_container_path);
@@ -440,10 +448,10 @@ void write_gdb_prep_cmds(AMDeviceRef device, CFURLRef disk_app_url) {
 
     CFDataRef cmds_data = CFStringCreateExternalRepresentation(NULL, cmds, kCFStringEncodingASCII, 0);
     char s[300] = PREP_CMDS_PATH;
-    if(device_id != NULL)
+    if(device_id != NULL) {
         strcat(s, device_id);
+    }
     FILE *out = fopen(s, "w");
-
     fwrite(CFDataGetBytePtr(cmds_data), CFDataGetLength(cmds_data), 1, out);
     if (gdb_commands) {
         // Add user GDB commands to GDB_PREP_CMDS
@@ -498,14 +506,18 @@ void start_remote_debug_server(AMDeviceRef device) {
     int yes = 1;
     setsockopt(CFSocketGetNative(fdvendor), SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
+    char m[300] = FDVENDOR_PATH;
+    if(device_id != NULL)
+        strcat(m, device_id);
+
     struct sockaddr_un address;
     memset(&address, 0, sizeof(address));
     address.sun_family = AF_UNIX;
-    strcpy(address.sun_path, FDVENDOR_PATH);
+    strcpy(address.sun_path, m);
     address.sun_len = SUN_LEN(&address);
     CFDataRef address_data = CFDataCreate(NULL, (const UInt8 *)&address, sizeof(address));
 
-    unlink(FDVENDOR_PATH);
+    unlink(m);
 
     CFSocketSetAddress(fdvendor, address_data);
     CFRelease(address_data);
