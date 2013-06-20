@@ -45,7 +45,7 @@ int AMDeviceSecureInstallApplication(int zero, AMDeviceRef device, CFURLRef url,
 int AMDeviceMountImage(AMDeviceRef device, CFStringRef image, CFDictionaryRef options, void *callback, int cbarg);
 int AMDeviceLookupApplications(AMDeviceRef device, int zero, CFDictionaryRef* result);
 
-bool found_device = false, debug = false, verbose = false, unbuffered = false, nostart = false, detect_only = false;
+bool found_device = false, debug = false, verbose = false, unbuffered = false, nostart = false, detect_only = false, install = true;
 char *app_path = NULL;
 char *device_id = NULL;
 char *gdb_commands = NULL;
@@ -197,7 +197,7 @@ CFStringRef copy_device_support_path(AMDeviceRef device) {
             path = copy_xcode_path_for(CFSTR("Platforms/iPhoneOS.platform/DeviceSupport"), CFStringCreateWithFormat(NULL, NULL, CFSTR("%@ (%@)"), version, build));
         }
         if (path == NULL) {
-            path = copy_xcode_path_for(CFSTR("Platforms/iPhoneOS.platform/DeviceSupport"), CFStringCreateWithFormat(NULL, NULL, CFSTR("%@ (*)"), version, build));
+            path = copy_xcode_path_for(CFSTR("Platforms/iPhoneOS.platform/DeviceSupport"), CFStringCreateWithFormat(NULL, NULL, CFSTR("%@ (*)"), version));
         }
         if (path == NULL) {
             path = copy_xcode_path_for(CFSTR("Platforms/iPhoneOS.platform/DeviceSupport"), version);
@@ -572,81 +572,7 @@ void gdb_ready_handler(int signum)
     _exit(0);
 }
 
-void handle_device(AMDeviceRef device) {
-    if (found_device) return; // handle one device only
-
-    CFStringRef found_device_id = AMDeviceCopyDeviceIdentifier(device);
-
-    if (device_id != NULL) {
-        if(strcmp(device_id, CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding())) == 0) {
-            found_device = true;
-        } else {
-            return;
-        }
-    } else {
-        found_device = true;
-    }
-
-    if (detect_only) {
-        printf("[....] Found device (%s).\n", CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding()));
-        exit(0);
-    }
-
-
-    CFRetain(device); // don't know if this is necessary?
-
-    printf("[  0%%] Found device (%s), beginning install\n", CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding()));
-
-    AMDeviceConnect(device);
-    assert(AMDeviceIsPaired(device));
-    assert(AMDeviceValidatePairing(device) == 0);
-    assert(AMDeviceStartSession(device) == 0);
-
-    CFStringRef path = CFStringCreateWithCString(NULL, app_path, kCFStringEncodingASCII);
-    CFURLRef relative_url = CFURLCreateWithFileSystemPath(NULL, path, kCFURLPOSIXPathStyle, false);
-    CFURLRef url = CFURLCopyAbsoluteURL(relative_url);
-
-    CFRelease(relative_url);
-
-    service_conn_t afcFd;
-    assert(AMDeviceStartService(device, CFSTR("com.apple.afc"), &afcFd, NULL) == 0);
-    assert(AMDeviceStopSession(device) == 0);
-    assert(AMDeviceDisconnect(device) == 0);
-    assert(AMDeviceTransferApplication(afcFd, path, NULL, transfer_callback, NULL) == 0);
-
-    close(afcFd);
-
-    CFStringRef keys[] = { CFSTR("PackageType") };
-    CFStringRef values[] = { CFSTR("Developer") };
-    CFDictionaryRef options = CFDictionaryCreate(NULL, (const void **)&keys, (const void **)&values, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-
-    AMDeviceConnect(device);
-    assert(AMDeviceIsPaired(device));
-    assert(AMDeviceValidatePairing(device) == 0);
-    assert(AMDeviceStartSession(device) == 0);
-
-    service_conn_t installFd;
-    assert(AMDeviceStartService(device, CFSTR("com.apple.mobile.installation_proxy"), &installFd, NULL) == 0);
-
-    assert(AMDeviceStopSession(device) == 0);
-    assert(AMDeviceDisconnect(device) == 0);
-
-    mach_error_t result = AMDeviceInstallApplication(installFd, path, options, install_callback, NULL);
-    if (result != 0)
-    {
-       printf("AMDeviceInstallApplication failed: %d\n", result);
-        exit(1);
-    }
-
-    close(installFd);
-
-    CFRelease(path);
-    CFRelease(options);
-
-    printf("[100%%] Installed package %s\n", app_path);
-
-    if (!debug) exit(0); // no debug phase
-
+void launch_debugger(AMDeviceRef device, CFURLRef url) {
     AMDeviceConnect(device);
     assert(AMDeviceIsPaired(device));
     assert(AMDeviceValidatePairing(device) == 0);
@@ -689,6 +615,87 @@ void handle_device(AMDeviceRef device) {
         kill(parent, SIGHUP);  // "No. I am your father."
         _exit(0);
     }
+
+}
+
+void handle_device(AMDeviceRef device) {
+    if (found_device) return; // handle one device only
+    CFStringRef found_device_id = AMDeviceCopyDeviceIdentifier(device);
+
+    if (device_id != NULL) {
+        if(strcmp(device_id, CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding())) == 0) {
+            found_device = true;
+        } else {
+            return;
+        }
+    } else {
+        found_device = true;
+    }
+
+    if (detect_only) {
+        printf("[....] Found device (%s).\n", CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding()));
+        exit(0);
+    }
+
+
+    CFRetain(device); // don't know if this is necessary?
+
+    CFStringRef path = CFStringCreateWithCString(NULL, app_path, kCFStringEncodingASCII);
+    CFURLRef relative_url = CFURLCreateWithFileSystemPath(NULL, path, kCFURLPOSIXPathStyle, false);
+    CFURLRef url = CFURLCopyAbsoluteURL(relative_url);
+
+    CFRelease(relative_url);
+
+    if(install) {
+        printf("[  0%%] Found device (%s), beginning install\n", CFStringGetCStringPtr(found_device_id, CFStringGetSystemEncoding()));
+
+        AMDeviceConnect(device);
+        assert(AMDeviceIsPaired(device));
+        assert(AMDeviceValidatePairing(device) == 0);
+        assert(AMDeviceStartSession(device) == 0);
+
+
+
+        service_conn_t afcFd;
+        assert(AMDeviceStartService(device, CFSTR("com.apple.afc"), &afcFd, NULL) == 0);
+        assert(AMDeviceStopSession(device) == 0);
+        assert(AMDeviceDisconnect(device) == 0);
+        assert(AMDeviceTransferApplication(afcFd, path, NULL, transfer_callback, NULL) == 0);
+
+        close(afcFd);
+
+        CFStringRef keys[] = { CFSTR("PackageType") };
+        CFStringRef values[] = { CFSTR("Developer") };
+        CFDictionaryRef options = CFDictionaryCreate(NULL, (const void **)&keys, (const void **)&values, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+        AMDeviceConnect(device);
+        assert(AMDeviceIsPaired(device));
+        assert(AMDeviceValidatePairing(device) == 0);
+        assert(AMDeviceStartSession(device) == 0);
+
+        service_conn_t installFd;
+        assert(AMDeviceStartService(device, CFSTR("com.apple.mobile.installation_proxy"), &installFd, NULL) == 0);
+
+        assert(AMDeviceStopSession(device) == 0);
+        assert(AMDeviceDisconnect(device) == 0);
+
+        mach_error_t result = AMDeviceInstallApplication(installFd, path, options, install_callback, NULL);
+        if (result != 0)
+        {
+           printf("AMDeviceInstallApplication failed: %d\n", result);
+            exit(1);
+        }
+
+        close(installFd);
+
+        CFRelease(path);
+        CFRelease(options);
+
+        printf("[100%%] Installed package %s\n", app_path);
+    }
+
+    if (!debug) exit(0); // no debug phase
+    launch_debugger(device, url);
 }
 
 void device_callback(struct am_device_notification_callback_info *info, void *arg) {
@@ -720,7 +727,8 @@ void usage(const char* app) {
         "  -g, --gdbargs <args>         extra arguments to pass to GDB when starting the debugger\n"
         "  -x, --gdbexec <file>         GDB commands script file\n"
         "  -n, --nostart                do not start the app when debugging\n"
-        "  -v, --verbose                enable verbose output\n",
+        "  -v, --verbose                enable verbose output\n"
+        "  -m, --noinstall              directly start debugging without app install (-d not required) \n",
         app);
 }
 
@@ -737,13 +745,18 @@ int main(int argc, char *argv[]) {
         { "gdbargs", required_argument, NULL, 'g' },
         { "nostart", no_argument, NULL, 'n' },
         { "detect", no_argument, NULL, 'c' },
+        { "noinstall", no_argument, NULL, 'm' },
         { NULL, 0, NULL, 0 },
     };
     char ch;
 
-    while ((ch = getopt_long(argc, argv, "cdvuni:b:a:t:g:x:", longopts, NULL)) != -1)
+    while ((ch = getopt_long(argc, argv, "mcdvuni:b:a:t:g:x:", longopts, NULL)) != -1)
     {
         switch (ch) {
+        case 'm':
+            install = 0;
+            debug = 1;
+            break;
         case 'd':
             debug = 1;
             break;
